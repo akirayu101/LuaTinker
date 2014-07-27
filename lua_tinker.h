@@ -6,6 +6,8 @@
 // 
 // please check Licence.txt file for licence and legal issues. 
 
+// 注释版，akirayu101@gmail.com qq@871805857
+
 #if !defined(_LUA_TINKER_H_)
 #define _LUA_TINKER_H_
 
@@ -14,51 +16,57 @@
 
 namespace lua_tinker
 {
-	// init LuaTinker
+	//初始化lua_State的函数
 	void	init(lua_State *L);
 
+	//会push到G中eq和lt的元方法
 	void	init_s64(lua_State *L);
 	void	init_u64(lua_State *L);
 
-	// string-buffer excution
+	//从buffer中dofile，包含了错误处理
 	void	dofile(lua_State *L, const char *filename);
 	void	dostring(lua_State *L, const char* buff);
 	void	dobuffer(lua_State *L, const char* buff, size_t sz);
 	
-	// debug helpers
+	//调试函数，用来检查stack等
 	void	enum_stack(lua_State *L);
 	int		on_error(lua_State *L);
 	void	print_error(lua_State *L, const char* fmt, ...);
 
-	// dynamic type extention
+	//扩展类型，在push和read中作为未知类型的默认调用T
 	struct lua_value
 	{
 		virtual void to_lua(lua_State *L) = 0;
 	};
 
-	// type trait
+	//type trait 开始
 	template<typename T> struct class_name;
 	struct table;
 
+	//用来进行做if判断分支的trait，从这个trait中可以取出来正确的T类型
 	template<bool C, typename A, typename B> struct if_ {};
 	template<typename A, typename B>		struct if_<true, A, B> { typedef A type; };
 	template<typename A, typename B>		struct if_<false, A, B> { typedef B type; };
 
+	//判断是否是ptr的trait
 	template<typename A>
 	struct is_ptr { static const bool value = false; };
 	template<typename A>
 	struct is_ptr<A*> { static const bool value = true; };
 
+	//判断是否为ref的trait
 	template<typename A>
 	struct is_ref { static const bool value = false; };
 	template<typename A>
 	struct is_ref<A&> { static const bool value = true; };
 
+	//移除T中的const
 	template<typename A>
 	struct remove_const { typedef A type; };
 	template<typename A>
 	struct remove_const<const A> { typedef A type; };
 
+	//拿到正真的type，比如int*, int, int& 都应该拿到int
 	template<typename A>
 	struct base_type { typedef A type; };
 	template<typename A>
@@ -66,9 +74,11 @@ namespace lua_tinker
 	template<typename A>
 	struct base_type<A&> { typedef A type; };
 
+	//class_type就是去掉const的base_type
 	template<typename A>
 	struct class_type { typedef typename remove_const<typename base_type<A>::type>::type type; };
 	
+	//判断是否是一个obj
 	template<typename A>
 	struct is_obj { static const bool value = true; };
 	template<> struct is_obj<char>					{ static const bool value = false; };
@@ -89,16 +99,21 @@ namespace lua_tinker
 	template<> struct is_obj<unsigned long long>	{ static const bool value = false; };
 	template<> struct is_obj<table>					{ static const bool value = false; };
 
-	/////////////////////////////////
+	//这个地方比较创建了两种类型
+	//no_type的类型是char[1]
+	//yes_type的类型是char[2]
+	//那么sizeof(no_type) != sizeof(yes_type)
 	enum { no = 1, yes = 2 }; 
 	typedef char (& no_type )[no]; 
 	typedef char (& yes_type)[yes]; 
 
+	//判断能否能够转换成int
 	struct int_conv_type { int_conv_type(int); }; 
 
 	no_type int_conv_tester (...); 
 	yes_type int_conv_tester (int_conv_type); 
 
+	//判断一个ptr是不是void*
 	no_type vfnd_ptr_tester (const volatile char *); 
 	no_type vfnd_ptr_tester (const volatile short *); 
 	no_type vfnd_ptr_tester (const volatile int *); 
@@ -108,20 +123,25 @@ namespace lua_tinker
 	no_type vfnd_ptr_tester (const volatile bool *); 
 	yes_type vfnd_ptr_tester (const volatile void *); 
 
+
+	//add ptr的作用仅仅在于其签名中的返回值，可以根据T做判断类型
 	template <typename T> T* add_ptr(T&); 
 
+	//判断是否为bool，包含了::type表明是否是bool
 	template <bool C> struct bool_to_yesno { typedef no_type type; }; 
 	template <> struct bool_to_yesno<true> { typedef yes_type type; }; 
 
+	//判断是否是enum类型，要能转换成int，且指针的类型不是int*
 	template <typename T> 
 	struct is_enum 
 	{ 
 		static T arg; 
 		static const bool value = ( (sizeof(int_conv_tester(arg)) == sizeof(yes_type)) && (sizeof(vfnd_ptr_tester(add_ptr(arg))) == sizeof(yes_type)) ); 
 	}; 
-	/////////////////////////////////
 
-	// from lua
+	//1.从lua中得到数据的总入口，其实最后的入口函数是lua2type
+
+	//把void*转换成某种数据
 	template<typename T>
 	struct void2val { static T invoke(void* input){ return *(T*)input; } };
 	template<typename T>
@@ -129,6 +149,7 @@ namespace lua_tinker
 	template<typename T>
 	struct void2ref { static T& invoke(void* input){ return *(T*)input; } };
 
+	//1.2用void2type加上了2层封装
 	template<typename T>  
 	struct void2type
 	{
@@ -144,6 +165,7 @@ namespace lua_tinker
 		}
 	};
 
+	//作者在这里自定义了一个自己和lua做交互的中间data proxy，名字是user，保存了一个void*的数据
 	struct user
 	{
 		user(void* p) : m_p(p) {}
@@ -151,12 +173,16 @@ namespace lua_tinker
 		void* m_p;
 	};
 
+	//从user转换成一个type
 	template<typename T>  
 	struct user2type { static T invoke(lua_State *L, int index) { return void2type<T>::invoke(lua_touserdata(L, index)); } };
 
+	//从lua的数据转换成enum
 	template<typename T>
 	struct lua2enum { static T invoke(lua_State *L, int index) { return (T)(int)lua_tonumber(L, index); } };
 
+	//把lua的一个数据转换成一个obj，在此够哦成中，先用user2type<user*>做了一层proxy，然后用void2type进行了一次转换
+	//最后得到了具体的type
 	template<typename T>
 	struct lua2object
 	{ 
@@ -171,6 +197,7 @@ namespace lua_tinker
 		} 
 	};
 
+	//封装出大的lua2type逻辑总入口，其实只有两种，lua2enum和lua2object
 	template<typename T>
 	T lua2type(lua_State *L, int index)
 	{
@@ -180,6 +207,10 @@ namespace lua_tinker
 				>::type::invoke(L, index);
 	}
 
+
+	//2.向lua中注入数据开始，其实最后就是封装出来了type2lua
+	//把一个val转换成中间数据格式user
+	//T为user的真实型别，T1...Tn是构造参数
 	template<typename T>
 	struct val2user : user
 	{
@@ -203,6 +234,8 @@ namespace lua_tinker
 		~val2user() { delete ((T*)m_p); }
 	};
 
+	//把一个ptr转换成user的类
+	//比较简单，直接指针转换
 	template<typename T>
 	struct ptr2user : user
 	{
@@ -215,7 +248,7 @@ namespace lua_tinker
 		ref2user(T& t) : user(&t) {}
 	};
 
-	// to lua
+	//具体如何把一个val, ptr, ref, enum 放入lua的栈中，这里用的都是userdata放入的栈
 	template<typename T>
 	struct val2lua { static void invoke(lua_State *L, T& input){ new(lua_newuserdata(L, sizeof(val2user<T>))) val2user<T>(input); } };
 	template<typename T>
@@ -226,6 +259,9 @@ namespace lua_tinker
 	template<typename T>
 	struct enum2lua { static void invoke(lua_State *L, T val) { lua_pushnumber(L, (int)val); } };
 
+	//一个object到lua的注入模板
+	//先involke得到让要注入的userdata处于栈上
+	//然后用setmetatable来放到name对应的table中
 	template<typename T>
 	struct object2lua 
 	{ 
@@ -244,6 +280,7 @@ namespace lua_tinker
 		} 
 	};
 
+	//最后type2lua大函数，包含了enum2lua和object2lua
 	template<typename T>
 	void type2lua(lua_State *L, T val)
 	{
@@ -253,14 +290,17 @@ namespace lua_tinker
 		>::type::invoke(L, val);
 	}
 
-	// get value from cclosure
+	//upvalue_函数
+	//这个函数的作用只有一个，就是取一个函数指针
+	//这个函数指针其实放置在本函数的upvalue的第一个位置
+	//T的作用是把这个函数指针还原到原貌，用来进行调用
 	template<typename T>  
 	T upvalue_(lua_State *L)
 	{
 		return user2type<T>::invoke(L, lua_upvalueindex(1));
 	}
 
-	// read a value from lua stack 
+	//从lua栈中得到一个数据，通用read方法
 	template<typename T>  
 	T read(lua_State *L, int index)				{ return lua2type<T>(L, index); }
 
@@ -282,7 +322,7 @@ namespace lua_tinker
 	template<>	unsigned long long	read(lua_State *L, int index);
 	template<>	table				read(lua_State *L, int index);
 
-	// push a value to lua stack 
+	//防止一个数据到lua栈上，通用push方法
 	template<typename T>  
 	void push(lua_State *L, T ret)					{ type2lua<T>(L, ret); }
 	
@@ -304,14 +344,19 @@ namespace lua_tinker
 	template<>	void push(lua_State *L, unsigned long long ret);
 	template<>	void push(lua_State *L, table ret);
 
-	// pop a value from lua stack
+	//从lua栈上pop出一个数据，其实是用来进行Rval和table的方法
 	template<typename T>  
 	T pop(lua_State *L) { T t = read<T>(L, -1); lua_pop(L, 1); return t; }
 	
 	template<>	void	pop(lua_State *L);
 	template<>	table	pop(lua_State *L);
 
-	// functor (with return value)
+	//functor模板，有参数的版本
+	//在这里，functor其实就是在脚本中调用一个c函数的call
+	//1.这个函数的调用过程中，先读取栈上的param
+	//2.用upvalue<T>拿到这个函数指针的具体型别
+	//3.调用这个函数指针，用栈上的param，然后push回栈
+
 	template<typename RVal, typename T1=void, typename T2=void, typename T3=void, typename T4=void, typename T5=void>
 	struct functor
 	{
@@ -348,7 +393,8 @@ namespace lua_tinker
 		static int invoke(lua_State *L) { push(L,upvalue_<RVal(*)()>(L)()); return 1; }
 	};
 
-	// functor (without return value)
+	//无返回值的functor的版本
+	//和有返回值的唯一区别就是在强制转换函数指针的时候返回类型是void
 	template<typename T1, typename T2, typename T3, typename T4, typename T5>
 	struct functor<void, T1, T2, T3, T4, T5>
 	{
@@ -385,7 +431,7 @@ namespace lua_tinker
 		static int invoke(lua_State *L) { upvalue_<void(*)()>(L)(); return 0; }
 	};
 
-	// functor (non-managed)
+	//未能处理的functor默认调用这两个
 	template<typename T1>
 	struct functor<int, lua_State*, T1>
 	{
@@ -398,7 +444,9 @@ namespace lua_tinker
 		static int invoke(lua_State *L) { return upvalue_<int(*)(lua_State*)>(L)(L); }
 	};
 
-	// push_functor
+	//把functor压入栈，这个其实是给def进行调用的
+	//注意，这个里面push_closure的时候，参数是1
+	//也就是说，有1个参数被放进了upvalue_index，这个参数就是原函数指针
 	template<typename RVal> 
 	void push_functor(lua_State *L, RVal (*func)())
 	{
@@ -435,7 +483,7 @@ namespace lua_tinker
 		lua_pushcclosure(L, functor<RVal,T1,T2,T3,T4,T5>::invoke, 1);
 	}
 
-	// member variable
+	//成员变量的定义
 	struct var_base
 	{
 		virtual void get(lua_State *L) = 0;
@@ -451,7 +499,13 @@ namespace lua_tinker
 		void set(lua_State *L)	{ read<T*>(L,1)->*(_var) = read<V>(L, 3);	}
 	};
 
-	// class member functor (with return value)
+	//这里是给class instance调用的functor
+	//不同在于，一个class instance的functor，总是要用一个class的instance来进行调用的
+	//1.首先read<T*>(L,1)
+	//2.用upvalue_<RVal(T::*)(T1...Tn)>(L)拿到函数的原型指针
+	//3.调用这个指针->*
+	//4.把结果push回去
+
 	template<typename RVal, typename T, typename T1=void, typename T2=void, typename T3=void, typename T4=void, typename T5=void>
 	struct mem_functor
 	{
@@ -488,7 +542,7 @@ namespace lua_tinker
 		static int invoke(lua_State *L) { push(L,(read<T*>(L,1)->*upvalue_<RVal(T::*)()>(L))()); return 1; }
 	};
 
-	// class member functor (without return value)
+	//无返回值的member function
 	template<typename T, typename T1, typename T2, typename T3, typename T4, typename T5>
 	struct mem_functor<void,T,T1,T2,T3,T4,T5>
 	{
@@ -538,7 +592,8 @@ namespace lua_tinker
 		static int invoke(lua_State *L) { return (read<T*>(L,1)->*upvalue_<int(T::*)(lua_State*)>(L))(L); }
 	};
 
-	// push_functor
+	//这里push了funcotr，同样需要注意这个进来的型别T::*代表了是member function ptr
+	//而pushcclosure中的1其实是说保存了一个函数指针的upvalue
 	template<typename RVal, typename T>
 	void push_functor(lua_State *L, RVal (T::*func)()) 
 	{ 
@@ -611,7 +666,7 @@ namespace lua_tinker
 		lua_pushcclosure(L, mem_functor<RVal,T,T1,T2,T3,T4,T5>::invoke, 1); 
 	}
 
-	// constructor
+	//类构造函数，就是用类的定义通过user的proxy创建了一个userdata
 	template<typename T, typename T1, typename T2, typename T3, typename T4, typename T5>
 	int constructor(lua_State *L) 
 	{ 
@@ -672,7 +727,7 @@ namespace lua_tinker
 		return 1; 
 	}
 
-	// destroyer
+	//类析构函数，简言之就是释放掉之前用于proxy创建的user数据
 	template<typename T>
 	int destroyer(lua_State *L) 
 	{ 
@@ -680,7 +735,7 @@ namespace lua_tinker
 		return 0;
 	}
 
-	// global function
+	//全局函数的def，用于注入一个函数到lua中
 	template<typename F> 
 	void def(lua_State* L, const char* name, F func)
 	{ 
@@ -690,7 +745,7 @@ namespace lua_tinker
 		lua_settable(L, LUA_GLOBALSINDEX);
 	}
 
-	// global variable
+	//全局函数的get和set，比较简单
 	template<typename T>
 	void set(lua_State* L, const char* name, T object)
 	{
@@ -713,7 +768,7 @@ namespace lua_tinker
 		set(L, name, object);
 	}
 
-	// call
+	//在c中去call一个lua的function，这个实现和programming in lua的27章基本一致，比较简单略过
 	template<typename RVal>
 	RVal call(lua_State* L, const char* name)
 	{
@@ -805,12 +860,12 @@ namespace lua_tinker
 		return pop<RVal>(L);
 	}
 
-	// class helper
+	//class的一些处理函数
 	int meta_get(lua_State *L);
 	int meta_set(lua_State *L);
 	void push_meta(lua_State *L, const char* name);
 
-	// class init
+	//创建一个元class给lua用，就是一个table
 	template<typename T>
 	void class_add(lua_State* L, const char* name) 
 	{ 
@@ -838,7 +893,7 @@ namespace lua_tinker
 		lua_settable(L, LUA_GLOBALSINDEX);
 	}
 
-	// Tinker Class Inheritence
+	//class集成，把某class设置成自己的元__parent
 	template<typename T, typename P>
 	void class_inh(lua_State* L)
 	{
@@ -852,7 +907,7 @@ namespace lua_tinker
 		lua_pop(L, 1);
 	}
 
-	// Tinker Class Constructor
+	//tinker中的class的创建方法
 	template<typename T, typename F>
 	void class_con(lua_State* L,F func)
 	{
@@ -868,7 +923,11 @@ namespace lua_tinker
 		lua_pop(L, 1);
 	}
 
-	// Tinker Class Functions
+	//class instance 成员函数的绑定
+	//1.拿到对应的class
+	//2.push进栈函数指针，作为upvalue
+	//3.绑定函数
+	//4.设置class中这个方法
 	template<typename T, typename F>
 	void class_def(lua_State* L, const char* name, F func) 
 	{ 
@@ -883,7 +942,7 @@ namespace lua_tinker
 		lua_pop(L, 1);
 	}
 
-	// Tinker Class Variables
+	//设置class的member，比较简单，略过
 	template<typename T, typename BASE, typename VAR>
 	void class_mem(lua_State* L, const char* name, VAR BASE::*val) 
 	{ 
@@ -897,10 +956,10 @@ namespace lua_tinker
 		lua_pop(L, 1);
 	}
 
+	//设置class_name 
 	template<typename T>
 	struct class_name
 	{
-		// global name
 		static const char* name(const char* name = NULL)
 		{
 			static char temp[256] = "";
@@ -909,7 +968,7 @@ namespace lua_tinker
 		}
 	};
 
-	// Table Object on Stack
+	//lua栈上的table对象
 	struct table_obj
 	{
 		table_obj(lua_State* L, int index);
@@ -953,7 +1012,7 @@ namespace lua_tinker
 		int				m_ref;
 	};
 
-	// Table Object Holder
+	//栈上的lua对象的wrapper
 	struct table
 	{
 		table(lua_State* L);
